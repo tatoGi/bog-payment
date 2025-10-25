@@ -26,10 +26,10 @@ return new class extends Migration
                 ->on('bog_payments')
                 ->onDelete('cascade');
 
-            $table->foreign('product_id')
-                ->references('id')
-                ->on('products')
-                ->onDelete('cascade');
+                // $table->foreign('product_id')
+                //     ->references('id')
+                //     ->on('products')
+                //     ->onDelete('cascade');
 
             // Indexes
             $table->index(['bog_payment_id', 'product_id']);
