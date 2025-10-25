@@ -250,8 +250,8 @@ For support, email support@example.com or open an issue on GitHub.
 
 **Your Name**
 
-- GitHub: [@yourusername](https://github.com/yourusername)
-- Email: your.email@example.com
+- GitHub: [@TatoGi](https://github.com/tatoGi/bog-payment)
+- Email: tato.laperashvili95@gmail.com
 
 ## 🙏 Credits
 
