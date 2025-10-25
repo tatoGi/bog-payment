@@ -1,7 +1,7 @@
 {
     "name": "bog/payment",
     "description": "Laravel package for BOG (Bank of Georgia) payment gateway integration with card management and payment tracking",
-    "version": "1.0.1",
+    "version": "1.0.3",
     "type": "library",
     "license": "MIT",
     "keywords": [
