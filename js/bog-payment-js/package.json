@@ -1,0 +1,48 @@
+{
+  "name": "tatogi-bog-payment-js",
+  "version": "1.0.0",
+  "description": "JavaScript client for Bank of Georgia iPay API",
+  "private": false,
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/client.test.js",
+    "prepublishOnly": "npm test",
+    "release:patch": "npm version patch && npm publish --access public",
+    "release:minor": "npm version minor && npm publish --access public",
+    "release:major": "npm version major && npm publish --access public"
+  },
+  "keywords": [
+    "bog",
+    "bank-of-georgia",
+    "ipay",
+    "payments",
+    "javascript",
+    "node"
+  ],
+  "author": "Tato",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tatoGi/bog-payment.git",
+    "directory": "js/bog-payment-js"
+  },
+  "bugs": {
+    "url": "https://github.com/tatoGi/bog-payment/issues"
+  },
+  "homepage": "https://github.com/tatoGi/bog-payment/tree/main/js/bog-payment-js#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

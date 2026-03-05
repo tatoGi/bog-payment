@@ -127,8 +127,92 @@ The package includes a built-in callback handler that uses **Atomic Locks** to p
 The package is fully tested with PHPUnit.
 
 ```bash
-vendor/bin/phpunit
+composer test
 ```
+
+### Test Without BOG Keys (Mock Files)
+
+If you do not have real BOG credentials yet, you can test the full package flow with local mock files.
+
+1. Create mock JSON files in your Laravel app:
+
+`storage/app/mock-bog/oauth-token.json`
+```json
+{
+  "access_token": "mock_access_token",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+`storage/app/mock-bog/order-created.json`
+```json
+{
+  "id": "mock_order_123",
+  "status": "created",
+  "_links": {
+    "redirect": {
+      "href": "https://example.test/fake-bog-checkout"
+    }
+  }
+}
+```
+
+`storage/app/mock-bog/payment-details.json`
+```json
+{
+  "id": "mock_order_123",
+  "status": "completed",
+  "payment_method": "card",
+  "amount": 100,
+  "currency": "GEL"
+}
+```
+
+2. Create `routes/mock-bog.php` in your app:
+
+```php
+<?php
+
+use Illuminate\Support\Facades\Route;
+
+Route::post('/mock/bog/oauth/token', function () {
+    return response()->json(json_decode(file_get_contents(storage_path('app/mock-bog/oauth-token.json')), true));
+});
+
+Route::post('/mock/bog/checkout/orders', function () {
+    return response()->json(json_decode(file_get_contents(storage_path('app/mock-bog/order-created.json')), true));
+});
+
+Route::get('/mock/bog/checkout/payment/{orderId}', function (string $orderId) {
+    $payload = json_decode(file_get_contents(storage_path('app/mock-bog/payment-details.json')), true);
+    $payload['id'] = $orderId;
+
+    return response()->json($payload);
+});
+```
+
+3. Load this route file in your application:
+- Laravel 11/12: add `require base_path('routes/mock-bog.php');` inside the `routes` callback in `bootstrap/app.php`.
+- Laravel 9/10: load it in `RouteServiceProvider` (or require it from `routes/web.php`).
+
+4. Point package URLs to mocks in `.env`:
+
+```env
+BOG_CLIENT_ID=mock_client
+BOG_CLIENT_SECRET=mock_secret
+BOG_AUTH_URL=http://127.0.0.1:8000/mock/bog/oauth/token
+BOG_ORDERS_URL=http://127.0.0.1:8000/mock/bog/checkout/orders
+BOG_PAYMENT_DETAILS_URL=http://127.0.0.1:8000/mock/bog/checkout/payment
+BOG_CALLBACK_URL=http://127.0.0.1:8000/bog/callback
+```
+
+5. Manual mock flow:
+- Call `POST /bog/orders` and confirm it returns `redirect_url`.
+- Simulate callback by calling `POST /bog/callback` with `{ "order_id": "mock_order_123" }`.
+- Check `bog_payments` table for `status=completed`.
+
+This validates checkout/callback integration before switching to real BOG credentials.
 
 ## 👤 Author
 
