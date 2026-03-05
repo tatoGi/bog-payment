@@ -2,6 +2,7 @@
 
 namespace Bog\Payment\Models;
 
+use Bog\Payment\Support\BogConfig;
 use Illuminate\Database\Eloquent\Model;
 
 class BogPayment extends Model
@@ -42,7 +43,7 @@ class BogPayment extends Model
      */
     public function user()
     {
-        return $this->belongsTo(\config('services.bog.user_model', 'App\Models\WebUser'), 'user_id');
+        return $this->belongsTo(BogConfig::get('user_model', 'App\Models\WebUser'), 'user_id');
     }
 
     /**
@@ -61,7 +62,7 @@ class BogPayment extends Model
      */
     public function products()
     {
-        $productModel = \config('services.bog.product_model', 'App\Models\Product');
+        $productModel = BogConfig::get('product_model', 'App\Models\Product');
 
         return $this->belongsToMany($productModel, 'bog_payment_product')
             ->withPivot('quantity', 'unit_price', 'total_price')

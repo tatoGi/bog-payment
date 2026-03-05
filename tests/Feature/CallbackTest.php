@@ -4,13 +4,13 @@ namespace Bog\Payment\Tests;
 
 use Bog\Payment\Models\BogPayment;
 use Bog\Payment\Services\BogPaymentService;
+use Bog\Payment\Tests\Models\Product;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Cache;
 
 class CallbackTest extends TestCase
 {
-    /** @test */
-    public function it_can_process_successful_callback_with_race_condition_prevention()
+    public function test_it_can_process_successful_callback_with_race_condition_prevention()
     {
         // 1. Setup Data
         $orderId = 'bog_order_123';
@@ -29,7 +29,7 @@ class CallbackTest extends TestCase
         // 2. Mock BOG API responses
         Http::fake([
             '*/auth/realms/bog/protocol/openid-connect/token' => Http::response(['access_token' => 'fake_token']),
-            '*/payments/v1/ecommerce/orders/*' => Http::response([
+            '*/checkout/payment/*' => Http::response([
                 'id' => $orderId,
                 'status' => 'completed',
                 'amount' => 100,
@@ -49,8 +49,7 @@ class CallbackTest extends TestCase
         $this->assertNotNull($payment->verified_at);
     }
 
-    /** @test */
-    public function it_blocks_concurrent_callbacks_for_the_same_order()
+    public function test_it_blocks_concurrent_callbacks_for_the_same_order()
     {
         $orderId = 'concurrent_order_456';
         BogPayment::create(['bog_order_id' => $orderId, 'amount' => 50, 'status' => 'created']);
@@ -66,5 +65,50 @@ class CallbackTest extends TestCase
 
         $this->assertEquals('error', $result['status']);
         $this->assertStringContainsString('Could not acquire lock', $result['message']);
+    }
+
+    public function test_it_marks_products_as_ordered_when_basket_is_inside_purchase_units()
+    {
+        $product = Product::create([
+            'name' => 'Rental Item',
+            'price' => 20,
+        ]);
+
+        $orderId = 'purchase_units_order_789';
+        BogPayment::create([
+            'bog_order_id' => $orderId,
+            'amount' => 20,
+            'currency' => 'GEL',
+            'status' => 'created',
+            'request_payload' => [
+                'purchase_units' => [
+                    'basket' => [
+                        [
+                            'product_id' => (string) $product->id,
+                            'quantity' => 1,
+                            'unit_price' => 20,
+                            'name' => 'Rental Item',
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        Http::fake([
+            '*/auth/realms/bog/protocol/openid-connect/token' => Http::response(['access_token' => 'fake_token']),
+            '*/checkout/payment/*' => Http::response([
+                'id' => $orderId,
+                'status' => 'completed',
+            ]),
+        ]);
+
+        $service = app(BogPaymentService::class);
+        $result = $service->handlePaymentCallback($orderId, ['order_id' => $orderId]);
+
+        $this->assertEquals('success', $result['status']);
+        $this->assertDatabaseHas('products', [
+            'id' => $product->id,
+            'is_ordered' => true,
+        ]);
     }
 }

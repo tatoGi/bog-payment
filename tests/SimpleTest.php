@@ -4,8 +4,7 @@ namespace Bog\Payment\Tests;
 
 class SimpleTest extends TestCase
 {
-    /** @test */
-    public function it_works()
+    public function test_it_works()
     {
         $this->assertTrue(true);
     }

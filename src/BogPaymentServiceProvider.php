@@ -11,7 +11,13 @@ class BogPaymentServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Merge config file
+        // Preferred package config namespace
+        $this->mergeConfigFrom(
+            __DIR__ . '/Config/bog.php',
+            'bog-payment'
+        );
+
+        // Backward-compatibility for legacy config("services.bog.*") consumers.
         $this->mergeConfigFrom(
             __DIR__ . '/Config/bog.php',
             'services.bog'

@@ -2,6 +2,7 @@
 
 namespace Bog\Payment\Services;
 
+use Bog\Payment\Support\BogConfig;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -9,12 +10,13 @@ class BogAuthService
 {
     public function getAccessToken()
     {
-        $url = \config('services.bog.auth_url');
-        $clientId = \config('services.bog.client_id');
-        $clientSecret = \config('services.bog.client_secret');
+        $url = BogConfig::authUrl();
+        $clientId = BogConfig::get('client_id');
+        $clientSecret = BogConfig::get('client_secret');
 
         $response = Http::asForm()
             ->withBasicAuth($clientId, $clientSecret)
+            ->timeout(15)
             ->post($url, [
                 'grant_type' => 'client_credentials',
             ]);

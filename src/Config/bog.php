@@ -1,10 +1,12 @@
 <?php
 
 return [
-    'api_base_url' => env('BOG_API_BASE_URL', 'https://api.bog.ge/payments'),
-    'auth_url' => env('BOG_AUTH_URL'),
-    'orders_url' => env('BOG_ORDERS_URL', 'https://api.bog.ge/payments/v1/ecommerce/orders'),
-    'receipt_url' => env('BOG_RECEIPT_URL', 'https://api.bog.ge/payments/v1/receipt'),
+    'api_base_url' => env('BOG_API_BASE_URL', 'https://ipay.ge/opay/api/v1'),
+    'api_url' => env('BOG_API_URL', env('BOG_API_BASE_URL', 'https://ipay.ge/opay/api/v1')),
+    'auth_url' => env('BOG_AUTH_URL', 'https://oauth2.bog.ge/auth/realms/bog/protocol/openid-connect/token'),
+    'orders_url' => env('BOG_ORDERS_URL', 'https://ipay.ge/opay/api/v1/checkout/orders'),
+    'payment_details_url' => env('BOG_PAYMENT_DETAILS_URL', 'https://ipay.ge/opay/api/v1/checkout/payment'),
+    'receipt_url' => env('BOG_RECEIPT_URL', 'https://ipay.ge/opay/api/v1/receipt'),
     'callback_url' => env('BOG_CALLBACK_URL'),
     'client_id' => env('BOG_CLIENT_ID'),
     'client_secret' => env('BOG_CLIENT_SECRET'),

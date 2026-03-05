@@ -2,6 +2,7 @@
 
 namespace Bog\Payment\Models;
 
+use Bog\Payment\Support\BogConfig;
 use Illuminate\Database\Eloquent\Model;
 
 class BogCard extends Model
@@ -48,7 +49,7 @@ class BogCard extends Model
      */
     public function user()
     {
-        $userModel = \config('services.bog.user_model', 'App\Models\WebUser');
+        $userModel = BogConfig::get('user_model', 'App\Models\WebUser');
 
         return $this->belongsTo($userModel, 'user_id');
     }

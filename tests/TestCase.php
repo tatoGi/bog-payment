@@ -4,13 +4,15 @@ namespace Bog\Payment\Tests;
 
 use Orchestra\Testbench\TestCase as Orchestra;
 use Bog\Payment\BogPaymentServiceProvider;
-use Illuminate\Support\Facades\Facade;
 
 class TestCase extends Orchestra
 {
     protected function setUp(): void
     {
         parent::setUp();
+
+        $this->loadMigrationsFrom(__DIR__ . '/../src/Database/Migrations');
+        $this->loadMigrationsFrom(__DIR__ . '/Migrations');
     }
 
     protected function getPackageProviders($app)
@@ -31,22 +33,18 @@ class TestCase extends Orchestra
         ]);
 
         // Setup BOG configuration for testing
-        $app['config']->set('services.bog', [
+        $config = [
             'client_id' => 'test_client_id',
             'client_secret' => 'test_client_secret',
-            'api_base_url' => 'https://api.bog.ge/payments',
+            'api_base_url' => 'https://ipay.ge/opay/api/v1',
             'auth_url' => 'https://oauth2.bog.ge/auth/realms/bog/protocol/openid-connect/token',
-            'orders_url' => 'https://api.bog.ge/payments/v1/ecommerce/orders',
+            'orders_url' => 'https://ipay.ge/opay/api/v1/checkout/orders',
+            'payment_details_url' => 'https://ipay.ge/opay/api/v1/checkout/payment',
             'product_model' => \Bog\Payment\Tests\Models\Product::class,
             'user_model' => \Bog\Payment\Tests\Models\User::class,
-        ]);
-    }
+        ];
 
-    protected function defineDatabaseMigrations()
-    {
-        $this->loadMigrationsFrom(__DIR__ . '/../src/Database/Migrations');
-
-        // Load our test migrations
-        $this->loadMigrationsFrom(__DIR__ . '/Migrations');
+        $app['config']->set('bog-payment', $config);
+        $app['config']->set('services.bog', $config);
     }
 }

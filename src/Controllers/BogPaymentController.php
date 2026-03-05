@@ -467,7 +467,7 @@ class BogPaymentController extends Controller
             'status' => $payment->status,
             'payment_method' => $payment->save_card_requested ? 'new_card' : 'saved_card',
             'products' => $products,
-            'basket' => $payment->request_payload['basket'] ?? [],
+            'basket' => $payment->request_payload['purchase_units']['basket'] ?? $payment->request_payload['basket'] ?? [],
             'created_at' => $payment->created_at->format('Y-m-d H:i:s'),
             'verified_at' => $payment->verified_at ? $payment->verified_at->format('Y-m-d H:i:s') : null,
         ];

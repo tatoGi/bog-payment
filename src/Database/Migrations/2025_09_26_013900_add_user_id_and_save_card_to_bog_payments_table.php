@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('bog_payments', function (Blueprint $table) {
-            $table->foreignId('user_id')->nullable()->constrained()->onDelete('cascade');
+            $table->unsignedBigInteger('user_id')->nullable()->index();
             $table->boolean('save_card_requested')->default(false);
             $table->timestamp('verified_at')->nullable();
         });
@@ -24,7 +24,7 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('bog_payments', function (Blueprint $table) {
-            $table->dropForeign(['user_id']);
+            $table->dropIndex(['user_id']);
             $table->dropColumn(['user_id', 'save_card_requested', 'verified_at']);
         });
     }

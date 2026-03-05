@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('bog_cards', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->unsignedBigInteger('user_id');
             $table->string('card_token')->unique();
             $table->string('card_mask');
             $table->string('card_type');

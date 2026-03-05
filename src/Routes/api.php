@@ -41,7 +41,6 @@ if (\config('bog-payment.routes.enabled', true)) {
     // Card management routes (authenticated)
     Route::prefix('bog/cards')->middleware('auth:sanctum')->group(function () {
         Route::post('/add', [BogCardController::class, 'addCard'])->name('bog.cards.add');
-        Route::post('/save', [BogCardController::class, 'saveCard'])->name('bog.cards.save');
         Route::get('/', [BogCardController::class, 'listCards'])->name('bog.cards.list');
         Route::delete('/{cardId}', [BogCardController::class, 'deleteCard'])->name('bog.cards.delete');
         Route::post('/{cardId}/set-default', [BogCardController::class, 'setDefaultCard'])->name('bog.cards.set-default');

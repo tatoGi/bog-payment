@@ -3,6 +3,7 @@
 namespace Bog\Payment\Services;
 
 use Bog\Payment\Models\BogPayment;
+use Bog\Payment\Support\BogConfig;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
@@ -115,7 +116,7 @@ class BogPaymentService
 
         try {
             // Get BOG API base URL from config
-            $baseUrl = \config('services.bog.api_base_url', 'https://api.bog.ge/payments');
+            $baseUrl = BogConfig::apiBaseUrl();
 
             // Build full URL (handle both absolute and relative URLs)
             $fullUrl = str_starts_with($url, 'http') ? $url : $baseUrl . $url;
@@ -146,7 +147,7 @@ class BogPaymentService
             $this->lastError = $e->getMessage();
 
             // Build full URL for error logging
-            $baseUrl = \config('services.bog.api_base_url', 'https://api.bog.ge/payments');
+            $baseUrl = BogConfig::apiBaseUrl();
             $fullUrl = str_starts_with($url, 'http') ? $url : $baseUrl . $url;
 
             Log::error('BOG API Exception', [
@@ -170,16 +171,18 @@ class BogPaymentService
         try {
             // Generate a temporary order ID if not provided
             $tempOrderId = 'temp_' . uniqid();
+            $transformedPayload = $this->transformPayloadForBogApi($payload);
+            $basket = $this->extractBasket($transformedPayload);
 
             // Create a database record for the payment
             $bogPayment = new BogPayment([
                 'bog_order_id' => $tempOrderId,
                 'external_order_id' => $payload['external_order_id'] ?? null,
                 'user_id' => $payload['user_id'] ?? null,
-                'amount' => $payload['purchase_units'][0]['amount']['value'] ?? 0,
-                'currency' => $payload['purchase_units'][0]['amount']['currency_code'] ?? 'GEL',
+                'amount' => $this->extractTotalAmount($transformedPayload),
+                'currency' => $this->extractCurrency($transformedPayload),
                 'status' => 'pending',
-                'request_payload' => $payload,
+                'request_payload' => $transformedPayload,
                 'save_card_requested' => $payload['save_card'] ?? false,
             ]);
 
@@ -201,31 +204,35 @@ class BogPaymentService
                 }
             }
 
-            // Transform the payload to match BOG API expectations
-            $transformedPayload = $this->transformPayloadForBogApi($payload);
-
             // Handle database operations in a transaction
-            return DB::transaction(function () use ($accessToken, $payload, $tempOrderId, $transformedPayload, $bogPayment) {
+            return DB::transaction(function () use ($accessToken, $tempOrderId, $transformedPayload, $bogPayment, $basket, $idempotencyKey, $acceptLanguage) {
                 // Save the payment record
                 if (! $bogPayment->save()) {
                     throw new \Exception('Failed to save payment to database');
                 }
 
                 // Attach products if available
-                $this->attachProductsToPayment($bogPayment, $payload['purchase_units']['basket'] ?? []);
+                $this->attachProductsToPayment($bogPayment, $basket);
 
-                // Make the API request
-                $response = Http::withHeaders([
+                $headers = [
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json',
-                    'Authorization' => 'Bearer ' . $accessToken,
-                ])
-                    ->withOptions([
-                        'debug' => \config('app.debug') ? fopen('php://stderr', 'w') : false,
-                        'verify' => \config('app.env') === 'production',
-                    ])
+                ];
+
+                if (! empty($idempotencyKey)) {
+                    $headers['Idempotency-Key'] = $idempotencyKey;
+                }
+
+                if (! empty($acceptLanguage)) {
+                    $headers['Accept-Language'] = $acceptLanguage;
+                }
+
+                // Make the API request
+                $response = Http::withToken($accessToken)
+                    ->withHeaders($headers)
+                    ->withOptions(['debug' => \config('app.debug')])
                     ->timeout(30)
-                    ->post(\config('services.bog.orders_url', 'https://api.bog.ge/payments/v1/ecommerce/orders'), $transformedPayload);
+                    ->post(BogConfig::ordersUrl(), $transformedPayload);
 
                 $responseBody = $response->json() ?? $response->body();
                 $this->lastHttpStatus = $response->status();
@@ -239,7 +246,7 @@ class BogPaymentService
                     'bog_order_id' => $responseBody['id'] ?? $tempOrderId,
                     'response_data' => $responseBody,
                     'redirect_url' => $responseBody['_links']['redirect']['href'] ?? null,
-                    'status' => 'created',
+                    'status' => $responseBody['status'] ?? 'created',
                 ]);
 
                 return $responseBody;
@@ -273,65 +280,107 @@ class BogPaymentService
     }
 
     /**
-     * Transform payload to match BOG API expectations
-     */
-    /**s
-     * Transform payload to match BOG API expectations
+     * Transform payload to match BOG iPay API expectations.
      */
     private function transformPayloadForBogApi(array $payload): array
     {
-        // If purchase_units is an array with numeric keys (multiple purchase units)
-        if (isset($payload['purchase_units']) && is_array($payload['purchase_units'])) {
-            $purchaseUnits = $payload['purchase_units'];
-
-            // Check if it's a sequential array (indexed with numbers)
-            if (array_keys($purchaseUnits) === range(0, count($purchaseUnits) - 1)) {
-                // Handle multiple purchase units (take the first one)
-                if (isset($purchaseUnits[0]['amount'], $purchaseUnits[0]['items'])) {
-                    $firstUnit = $purchaseUnits[0];
-
-                    $transformedPayload = $payload;
-                    $transformedPayload['purchase_units'] = [
-                        'total_amount' => $firstUnit['amount']['value'] ?? 0,
-                        'currency' => $firstUnit['amount']['currency_code'] ?? 'GEL',
-                        'basket' => array_map(function ($item) {
-                            return [
-                                'product_id' => $item['sku'] ?? $item['product_id'] ?? uniqid(),
-                                'name' => $item['name'] ?? 'Product',
-                                'quantity' => $item['quantity'] ?? 1,
-                                'unit_price' => $item['unit_price'] ?? 0,
-                                'total_amount' => ($item['quantity'] ?? 1) * ($item['unit_price'] ?? 0),
-                            ];
-                        }, $firstUnit['items'] ?? []),
-                    ];
-
-                    return $transformedPayload;
-                }
-            }
-            // Handle single purchase unit with basket
-            elseif (isset($purchaseUnits['basket']) && is_array($purchaseUnits['basket'])) {
-                $transformedPayload = $payload;
-                $transformedPayload['purchase_units'] = [
-                    'total_amount' => $purchaseUnits['total_amount'] ?? $purchaseUnits['amount']['value'] ?? 0,
-                    'currency' => $purchaseUnits['currency'] ?? $purchaseUnits['amount']['currency_code'] ?? 'GEL',
-                    'basket' => array_map(function ($item) {
-                        return [
-                            'product_id' => $item['product_id'] ?? $item['sku'] ?? uniqid(),
-                            'name' => $item['name'] ?? 'Product',
-                            'quantity' => $item['quantity'] ?? 1,
-                            'unit_price' => $item['unit_price'] ?? 0,
-                            'total_amount' => ($item['quantity'] ?? 1) * ($item['unit_price'] ?? 0),
-                        ];
-                    }, $purchaseUnits['basket']),
-                ];
-
-                return $transformedPayload;
-            }
+        if (! isset($payload['purchase_units']) || ! is_array($payload['purchase_units'])) {
+            return $payload;
         }
 
-        // If no transformation needed, return original payload
+        $transformedPayload = $payload;
+        $purchaseUnits = $payload['purchase_units'];
+        $firstUnit = $purchaseUnits;
 
-        return $payload;
+        if ($this->isSequentialArray($purchaseUnits)) {
+            $firstUnit = $purchaseUnits[0] ?? [];
+        }
+
+        $items = $firstUnit['basket'] ?? $firstUnit['items'] ?? [];
+        if (! is_array($items)) {
+            $items = [];
+        }
+
+        $basket = array_map(function ($item) {
+            return $this->normalizeBasketItem(is_array($item) ? $item : []);
+        }, $items);
+
+        $totalAmount = $firstUnit['total_amount']
+            ?? $firstUnit['amount']['value']
+            ?? $this->calculateBasketTotal($basket);
+
+        $currency = $firstUnit['currency']
+            ?? $firstUnit['amount']['currency_code']
+            ?? 'GEL';
+
+        $transformedPayload['purchase_units'] = [
+            'total_amount' => $totalAmount,
+            'currency' => $currency,
+            'basket' => $basket,
+        ];
+
+        return $transformedPayload;
+    }
+
+    private function normalizeBasketItem(array $item): array
+    {
+        $quantity = max(1, (int) ($item['quantity'] ?? 1));
+        $unitPrice = (float) ($item['unit_price'] ?? 0);
+
+        return [
+            'product_id' => (string) ($item['product_id'] ?? $item['sku'] ?? uniqid('product_', true)),
+            'name' => $item['name'] ?? 'Product',
+            'quantity' => $quantity,
+            'unit_price' => $unitPrice,
+            'total_amount' => $item['total_amount'] ?? ($quantity * $unitPrice),
+        ];
+    }
+
+    private function isSequentialArray(array $array): bool
+    {
+        return array_keys($array) === range(0, count($array) - 1);
+    }
+
+    private function extractBasket(array $payload): array
+    {
+        $purchaseUnitsBasket = $payload['purchase_units']['basket'] ?? null;
+        if (is_array($purchaseUnitsBasket)) {
+            return $purchaseUnitsBasket;
+        }
+
+        $flatBasket = $payload['basket'] ?? null;
+
+        return is_array($flatBasket) ? $flatBasket : [];
+    }
+
+    private function extractTotalAmount(array $payload): float
+    {
+        return (float) (
+            $payload['purchase_units']['total_amount']
+            ?? $payload['purchase_units'][0]['amount']['value']
+            ?? 0
+        );
+    }
+
+    private function extractCurrency(array $payload): string
+    {
+        return (string) (
+            $payload['purchase_units']['currency']
+            ?? $payload['purchase_units'][0]['amount']['currency_code']
+            ?? 'GEL'
+        );
+    }
+
+    private function calculateBasketTotal(array $basket): float
+    {
+        $total = 0.0;
+        foreach ($basket as $item) {
+            $quantity = (int) ($item['quantity'] ?? 1);
+            $unitPrice = (float) ($item['unit_price'] ?? 0);
+            $total += $quantity * $unitPrice;
+        }
+
+        return $total;
     }
 
     /**
@@ -339,7 +388,7 @@ class BogPaymentService
      */
     public function getOrderDetails(string $accessToken, string $orderId): ?array
     {
-        $url = \config('services.bog.orders_url', 'https://api.bog.ge/payments/v1/ecommerce/orders') . '/' . $orderId;
+        $url = BogConfig::paymentDetailsUrl($orderId);
 
         $response = $this->makeRequest('get', $url, $accessToken);
 
@@ -397,7 +446,7 @@ class BogPaymentService
      */
     public function processAutomaticPayment(string $accessToken, string $parentOrderId, array $data): array
     {
-        $url = \config('services.bog.orders_url', 'https://api.bog.ge/payments/v1/ecommerce/orders') . "/{$parentOrderId}/payments";
+        $url = BogConfig::ordersUrl() . "/{$parentOrderId}/payments";
 
         $payload = [
             'amount' => $data['amount'],
@@ -435,7 +484,7 @@ class BogPaymentService
      */
     public function saveCardForAutomaticPayments(string $accessToken, string $orderId, ?string $idempotencyKey = null): array
     {
-        $url = \config('services.bog.orders_url', 'https://api.bog.ge/payments/v1/ecommerce/orders') . "/{$orderId}/save-card";
+        $url = BogConfig::ordersUrl() . "/{$orderId}/save-card";
 
         $headers = [
             'Content-Type' => 'application/json',
@@ -481,7 +530,7 @@ class BogPaymentService
      */
     public function rejectPreAuthorization(string $accessToken, string $orderId, array $data = [])
     {
-        $endpoint = \config('services.bog.api_url') . '/v1/orders/' . $orderId . '/preauthorization/reject';
+        $endpoint = BogConfig::ordersUrl() . "/{$orderId}/preauthorization/reject";
 
         $response = Http::withToken($accessToken)
             ->withHeaders([
@@ -515,7 +564,7 @@ class BogPaymentService
      */
     public function confirmPreAuthorization(string $accessToken, string $orderId, array $data = [])
     {
-        $endpoint = \config('services.bog.api_url') . '/v1/orders/' . $orderId . '/preauthorization/confirm';
+        $endpoint = BogConfig::ordersUrl() . "/{$orderId}/preauthorization/confirm";
 
         $response = Http::withToken($accessToken)
             ->withHeaders([
@@ -547,7 +596,7 @@ class BogPaymentService
      */
     public function deleteSavedCard(string $accessToken, string $orderId, string $idempotencyKey): array
     {
-        $endpoint = \config('services.bog.api_url') . "/v1/orders/{$orderId}/saved-card";
+        $endpoint = BogConfig::ordersUrl() . "/{$orderId}/saved-card";
 
         $response = Http::withToken($accessToken)
             ->withHeaders([
@@ -580,7 +629,7 @@ class BogPaymentService
      */
     public function saveCard(string $accessToken, string $orderId, ?string $idempotencyKey = null): array
     {
-        $url = \config('services.bog.orders_url', 'https://api.bog.ge/payments/v1/ecommerce/orders') . "/{$orderId}/save-card";
+        $url = BogConfig::ordersUrl() . "/{$orderId}/save-card";
 
         $headers = [
             'Content-Type' => 'application/json',
@@ -658,7 +707,7 @@ class BogPaymentService
      */
     public function chargeCard(string $accessToken, string $parentOrderId, array $paymentData): array
     {
-        $url = \config('services.bog.orders_url', 'https://api.bog.ge/payments/v1/ecommerce/orders') . "/{$parentOrderId}/payments";
+        $url = BogConfig::ordersUrl() . "/{$parentOrderId}/payments";
 
         $payload = [
             'amount' => $paymentData['amount'],
@@ -820,7 +869,7 @@ class BogPaymentService
      */
     protected function markProductsAsOrdered(BogPayment $payment)
     {
-        $basket = $payment->request_payload['basket'] ?? [];
+        $basket = $this->extractBasket($payment->request_payload ?? []);
         if (empty($basket)) return;
 
         $webUserId = $payment->request_payload['web_user_id'] ?? $payment->user_id;
@@ -848,7 +897,7 @@ class BogPaymentService
         }
 
         // Update individual Product models in the app
-        $productModelClass = \config('services.bog.product_model', 'App\Models\Product');
+        $productModelClass = BogConfig::get('product_model', 'App\Models\Product');
         if (class_exists($productModelClass)) {
             foreach ($basket as $item) {
                 if (isset($item['product_id'])) {
@@ -893,7 +942,7 @@ class BogPaymentService
         }
 
         if (!empty($pivotData) && method_exists($payment, 'products')) {
-            $payment->products()->attach($pivotData);
+            $payment->products()->syncWithoutDetaching($pivotData);
         }
     }
 
@@ -904,7 +953,7 @@ class BogPaymentService
     {
         $updatedProducts = [];
         $errors = [];
-        $productModelClass = \config('services.bog.product_model', 'App\Models\Product');
+        $productModelClass = BogConfig::get('product_model', 'App\Models\Product');
 
         if (!class_exists($productModelClass)) {
             return ['success' => false, 'message' => "Product model class {$productModelClass} does not exist"];
